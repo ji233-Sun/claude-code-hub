@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Pencil, X } from "lucide-react";
+import { Activity, ChevronDown, Pencil, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ export interface ProviderBatchToolbarProps {
   onSelectAll: (checked: boolean) => void;
   onInvertSelection: () => void;
   onOpenBatchEdit: () => void;
+  onOpenBatchTest?: () => void;
   providers: ProviderDisplay[];
   onSelectByType: (type: ProviderType) => void;
   onSelectByGroup: (group: string) => void;
@@ -41,12 +42,14 @@ export function ProviderBatchToolbar({
   onSelectAll,
   onInvertSelection,
   onOpenBatchEdit,
+  onOpenBatchTest,
   providers,
   onSelectByType,
   onSelectByGroup,
   showSelectByGroup = true,
 }: ProviderBatchToolbarProps) {
   const t = useTranslations("settings.providers.batchEdit");
+  const tTest = useTranslations("settings.providers.batchTest");
 
   const uniqueTypes = useMemo(() => {
     const typeMap = new Map<ProviderType, number>();
@@ -85,6 +88,18 @@ export function ProviderBatchToolbar({
         >
           {t("enterMode")}
         </Button>
+        {onOpenBatchTest && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onOpenBatchTest}
+            disabled={totalCount === 0}
+          >
+            <Activity className="mr-2 h-4 w-4" />
+            {tTest("entryButton")}
+          </Button>
+        )}
         {totalCount > 0 && (
           <span className="text-xs text-muted-foreground hidden sm:inline-block">
             {t("selectionHint")}

@@ -7,7 +7,11 @@
 import { resolveAnthropicAuthHeaders } from "@/app/v1/_lib/headers";
 import { buildProxyUrl } from "@/app/v1/_lib/url";
 import type { ProviderType } from "@/types/provider";
+import { DEFAULT_MODELS } from "../client-defaults";
 import type { ClaudeTestBody, CodexTestBody, GeminiTestBody, OpenAITestBody } from "../types";
+
+// 协议级默认模型统一维护在 client-defaults（客户端组件也会引用）
+export { DEFAULT_MODELS };
 
 export const USER_AGENTS: Record<ProviderType, string> = {
   claude: "claude-cli/2.1.84 (external, cli)",
@@ -106,15 +110,6 @@ export const OPENAI_TEST_HEADERS = {
 export const GEMINI_TEST_HEADERS = {
   "content-type": "application/json",
   "x-goog-api-client": "google-genai-sdk/1.30.0 gl-node/v24.11.0",
-};
-
-export const DEFAULT_MODELS: Record<ProviderType, string> = {
-  claude: "claude-haiku-4-5-20251001",
-  "claude-auth": "claude-haiku-4-5-20251001",
-  codex: "gpt-5.5",
-  "openai-compatible": "gpt-4.1-mini",
-  gemini: "gemini-2.5-flash",
-  "gemini-cli": "gemini-2.5-flash",
 };
 
 export const DEFAULT_SUCCESS_CONTAINS: Record<ProviderType, string> = {

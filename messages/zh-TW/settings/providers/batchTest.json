@@ -1,0 +1,28 @@
+{
+  "entryButton": "批次測試",
+  "actionButton": "測試",
+  "dialog": {
+    "title": "批次測試供應商",
+    "runningDesc": "正在使用預設測試設定測試 {count} 個供應商...",
+    "doneDesc": "已完成 {count} 個供應商的測試",
+    "progress": "{completed}/{total}"
+  },
+  "status": {
+    "pending": "等待中",
+    "running": "測試中",
+    "green": "成功",
+    "yellow": "警告",
+    "red": "失敗",
+    "skipped": "已略過"
+  },
+  "buttons": {
+    "cancel": "取消測試",
+    "retest": "重新測試",
+    "close": "關閉"
+  },
+  "errors": {
+    "keyFetchFailed": "取得金鑰失敗",
+    "testFailed": "測試失敗",
+    "noResult": "未返回測試結果"
+  }
+}

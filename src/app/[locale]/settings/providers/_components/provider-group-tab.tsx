@@ -55,6 +55,7 @@ import { cn } from "@/lib/utils";
 import { resolveProviderGroupsWithDefault } from "@/lib/utils/provider-group";
 import type { ProviderDisplay } from "@/types/provider";
 import { ProviderBatchActions, ProviderBatchDialog, ProviderBatchToolbar } from "./batch-edit";
+import { ProviderBatchTestDialog } from "./batch-test";
 import { InlineEditPopover } from "./inline-edit-popover";
 import { invalidateProviderQueries } from "./invalidate-provider-queries";
 
@@ -549,6 +550,9 @@ function GroupMembersPanel({
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [batchActionMode, setBatchActionMode] = useState<BatchActionMode>(null);
 
+  // 批量测试：非空时弹出测试对话框（打开即开始测试）
+  const [batchTestProviders, setBatchTestProviders] = useState<ProviderDisplay[] | null>(null);
+
   const allSelected = members.length > 0 && selectedProviderIds.size === members.length;
 
   const handleSelectAll = useCallback(
@@ -601,10 +605,17 @@ function GroupMembersPanel({
     setBatchDialogOpen(true);
   }, []);
 
-  const handleBatchAction = useCallback((mode: BatchActionMode) => {
-    setBatchActionMode(mode);
-    setBatchDialogOpen(true);
-  }, []);
+  const handleBatchAction = useCallback(
+    (mode: BatchActionMode) => {
+      if (mode === "test") {
+        setBatchTestProviders(members.filter((member) => selectedProviderIds.has(member.id)));
+        return;
+      }
+      setBatchActionMode(mode);
+      setBatchDialogOpen(true);
+    },
+    [members, selectedProviderIds]
+  );
 
   const handleBatchSuccess = useCallback(() => {
     setSelectedProviderIds(new Set());
@@ -698,6 +709,13 @@ function GroupMembersPanel({
         providers={members}
         onSuccess={handleBatchSuccess}
       />
+
+      {batchTestProviders && (
+        <ProviderBatchTestDialog
+          providers={batchTestProviders}
+          onClose={() => setBatchTestProviders(null)}
+        />
+      )}
     </div>
   );
 }

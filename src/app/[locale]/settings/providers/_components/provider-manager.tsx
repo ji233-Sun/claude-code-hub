@@ -41,6 +41,7 @@ import {
   ProviderBatchDialog,
   ProviderBatchToolbar,
 } from "./batch-edit";
+import { ProviderBatchTestDialog } from "./batch-test";
 import { ProviderForm } from "./forms/provider-form";
 import { ProviderGroupTab } from "./provider-group-tab";
 import { ProviderList } from "./provider-list";
@@ -109,6 +110,9 @@ export function ProviderManager({
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [batchActionMode, setBatchActionMode] = useState<BatchActionMode>(null);
   const [editingProviderId, setEditingProviderId] = useState<number | null>(null);
+
+  // 批量测试：非空时弹出测试对话框（打开即开始测试）
+  const [batchTestProviders, setBatchTestProviders] = useState<ProviderDisplay[] | null>(null);
 
   // Helper: check if a provider has any circuit open (key-level or endpoint-level)
   const hasAnyCircuitOpen = useCallback(
@@ -308,10 +312,21 @@ export function ProviderManager({
     setBatchDialogOpen(true);
   }, []);
 
-  const handleBatchAction = useCallback((mode: BatchActionMode) => {
-    setBatchActionMode(mode);
-    setBatchDialogOpen(true);
-  }, []);
+  const handleBatchAction = useCallback(
+    (mode: BatchActionMode) => {
+      if (mode === "test") {
+        setBatchTestProviders(filteredProviders.filter((p) => selectedProviderIds.has(p.id)));
+        return;
+      }
+      setBatchActionMode(mode);
+      setBatchDialogOpen(true);
+    },
+    [filteredProviders, selectedProviderIds]
+  );
+
+  const handleOpenBatchTestAll = useCallback(() => {
+    setBatchTestProviders(filteredProviders);
+  }, [filteredProviders]);
 
   const handleSelectByType = useCallback(
     (type: ProviderType) => {
@@ -378,6 +393,7 @@ export function ProviderManager({
           onSelectAll={handleSelectAll}
           onInvertSelection={handleInvertSelection}
           onOpenBatchEdit={handleOpenBatchEdit}
+          onOpenBatchTest={handleOpenBatchTestAll}
           providers={filteredProviders}
           onSelectByType={handleSelectByType}
           onSelectByGroup={handleSelectByGroup}
@@ -707,6 +723,13 @@ export function ProviderManager({
         providers={filteredProviders}
         onSuccess={handleBatchSuccess}
       />
+
+      {batchTestProviders && (
+        <ProviderBatchTestDialog
+          providers={batchTestProviders}
+          onClose={() => setBatchTestProviders(null)}
+        />
+      )}
 
       <Dialog
         open={editingProvider != null}

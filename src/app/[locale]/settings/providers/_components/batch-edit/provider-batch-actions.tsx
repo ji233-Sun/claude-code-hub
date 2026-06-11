@@ -1,12 +1,12 @@
 "use client";
 
-import { Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { Activity, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
-export type BatchActionMode = "edit" | "delete" | "resetCircuit" | null;
+export type BatchActionMode = "edit" | "delete" | "resetCircuit" | "test" | null;
 
 export interface ProviderBatchActionsProps {
   selectedCount: number;
@@ -22,6 +22,7 @@ export function ProviderBatchActions({
   onClose,
 }: ProviderBatchActionsProps) {
   const t = useTranslations("settings.providers.batchEdit");
+  const tTest = useTranslations("settings.providers.batchTest");
 
   if (!isVisible || selectedCount === 0) {
     return null;
@@ -45,6 +46,11 @@ export function ProviderBatchActions({
         <Button size="sm" onClick={() => onAction("edit")}>
           <Pencil className="mr-2 h-4 w-4" />
           {t("actions.edit")}
+        </Button>
+
+        <Button size="sm" variant="outline" onClick={() => onAction("test")}>
+          <Activity className="mr-2 h-4 w-4" />
+          {tTest("actionButton")}
         </Button>
 
         <Button size="sm" variant="outline" onClick={() => onAction("resetCircuit")}>

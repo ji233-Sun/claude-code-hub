@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { normalizeAllowedModelRules } from "@/lib/allowed-model-rules";
 import {
   getUnmaskedProviderKey,
   type ProviderApiTestSuccessDetails,
@@ -21,6 +20,12 @@ import {
   parseCustomHeadersJsonText,
   stringifyCustomHeadersForTextarea,
 } from "@/lib/custom-headers";
+import {
+  DEFAULT_MODELS,
+  getDefaultTestTimeoutMs,
+  resolveDefaultTestModel,
+  resolveProviderType,
+} from "@/lib/provider-testing/client-defaults";
 import { isValidUrl } from "@/lib/utils/validation";
 import type { AllowedModelRuleInput, ProviderType } from "@/types/provider";
 import { TestResultCard, type UnifiedTestResultData } from "./test-result-card";
@@ -29,30 +34,6 @@ const API_TEST_UI_CONFIG = {
   TOAST_SUCCESS_DURATION: 3000,
   TOAST_ERROR_DURATION: 5000,
 } as const;
-
-const DEFAULT_MODELS: Record<ProviderType, string> = {
-  claude: "claude-haiku-4-5-20251001",
-  "claude-auth": "claude-haiku-4-5-20251001",
-  codex: "gpt-5.5",
-  "openai-compatible": "gpt-4.1-mini",
-  gemini: "gemini-2.5-flash",
-  "gemini-cli": "gemini-2.5-flash",
-};
-
-function resolveProviderType(providerType?: ProviderType | null): ProviderType {
-  return providerType ?? "claude";
-}
-
-function getDefaultModelForProvider(
-  providerType?: ProviderType | null,
-  whitelistDefault?: string
-): string {
-  return whitelistDefault ?? DEFAULT_MODELS[resolveProviderType(providerType)];
-}
-
-function getTimeoutMsForProvider(providerType: ProviderType): number {
-  return providerType === "gemini" || providerType === "gemini-cli" ? 60_000 : 15_000;
-}
 
 function normalizeUsage(usage?: Record<string, unknown>) {
   if (!usage) {
@@ -106,21 +87,11 @@ export function ApiTestButton({
   enableMultiProviderTypes: _enableMultiProviderTypes,
 }: ApiTestButtonProps) {
   const t = useTranslations("settings.providers.form.apiTest");
-  const normalizedAllowedModels = useMemo(() => {
-    const unique = new Set<string>();
-    (normalizeAllowedModelRules(allowedModels) ?? []).forEach((rule) => {
-      if (rule.matchType === "exact") {
-        unique.add(rule.pattern);
-      }
-    });
-    return Array.from(unique);
-  }, [allowedModels]);
-
   const resolvedProviderType = resolveProviderType(providerType);
   const [isTesting, setIsTesting] = useState(false);
   const [isModelManuallyEdited, setIsModelManuallyEdited] = useState(false);
   const [testModel, setTestModel] = useState(() =>
-    getDefaultModelForProvider(providerType, normalizedAllowedModels[0])
+    resolveDefaultTestModel(providerType, allowedModels)
   );
   const initialCustomHeadersText = useMemo(
     () => stringifyCustomHeadersForTextarea(customHeaders ?? null),
@@ -136,8 +107,8 @@ export function ApiTestButton({
       return;
     }
 
-    setTestModel(getDefaultModelForProvider(providerType, normalizedAllowedModels[0]));
-  }, [isModelManuallyEdited, normalizedAllowedModels, providerType]);
+    setTestModel(resolveDefaultTestModel(providerType, allowedModels));
+  }, [isModelManuallyEdited, allowedModels, providerType]);
 
   // 仅在用户未手动编辑时随 prop 变更同步；切换 provider 身份时重置编辑标志
   useEffect(() => {
@@ -225,7 +196,7 @@ export function ApiTestButton({
           model: testModel.trim() || undefined,
           proxyUrl: proxyUrl?.trim() || null,
           proxyFallbackToDirect,
-          timeoutMs: getTimeoutMsForProvider(resolvedProviderType),
+          timeoutMs: getDefaultTestTimeoutMs(resolvedProviderType),
         });
 
         if (!response.ok) {
@@ -331,7 +302,7 @@ export function ApiTestButton({
           model: testModel.trim() || undefined,
           proxyUrl: proxyUrl?.trim() || null,
           proxyFallbackToDirect,
-          timeoutMs: getTimeoutMsForProvider(resolvedProviderType),
+          timeoutMs: getDefaultTestTimeoutMs(resolvedProviderType),
           customHeaders: customHeadersValue ?? undefined,
         });
 

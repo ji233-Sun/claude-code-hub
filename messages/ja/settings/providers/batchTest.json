@@ -1,0 +1,28 @@
+{
+  "entryButton": "一括テスト",
+  "actionButton": "テスト",
+  "dialog": {
+    "title": "プロバイダーの一括テスト",
+    "runningDesc": "デフォルトのテスト設定で {count} 個のプロバイダーをテストしています...",
+    "doneDesc": "{count} 個のプロバイダーのテストが完了しました",
+    "progress": "{completed}/{total}"
+  },
+  "status": {
+    "pending": "待機中",
+    "running": "テスト中",
+    "green": "成功",
+    "yellow": "警告",
+    "red": "失敗",
+    "skipped": "スキップ"
+  },
+  "buttons": {
+    "cancel": "テストをキャンセル",
+    "retest": "再テスト",
+    "close": "閉じる"
+  },
+  "errors": {
+    "keyFetchFailed": "API キーの取得に失敗しました",
+    "testFailed": "テストに失敗しました",
+    "noResult": "テスト結果が返されませんでした"
+  }
+}

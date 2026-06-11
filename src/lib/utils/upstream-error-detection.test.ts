@@ -256,6 +256,91 @@ describe("detectUpstreamErrorFromSseOrJsonText", () => {
     const res = detectUpstreamErrorFromSseOrJsonText(sse);
     expect(res.isError).toBe(false);
   });
+
+  test("SSE：Responses API response.failed 事件（错误嵌套在 response.error）视为错误", () => {
+    const failedEvent = {
+      type: "response.failed",
+      response: {
+        id: "resp_01bf2622ae4f4fa28270ef4f0a7ec862",
+        object: "response",
+        model: "gpt-5.5",
+        status: "failed",
+        output: [],
+        error: {
+          code: "rate_limit_exceeded",
+          message: "Concurrency limit exceeded for account, please retry later",
+        },
+      },
+    };
+    const sse = ["event: response.failed", `data: ${JSON.stringify(failedEvent)}`, ""].join("\n");
+    const res = detectUpstreamErrorFromSseOrJsonText(sse);
+    expect(res.isError).toBe(true);
+    if (res.isError) {
+      expect(res.code).toBe("FAKE_200_RESPONSES_FAILED");
+      expect(res.detail).toContain("rate_limit_exceeded");
+      expect(res.detail).toContain("Concurrency limit exceeded");
+    }
+  });
+
+  test("SSE：Responses API response.failed 事件即使缺失 error 字段也视为错误", () => {
+    const sse = [
+      "event: response.failed",
+      'data: {"type":"response.failed","response":{"object":"response","status":"failed","output":[]}}',
+      "",
+    ].join("\n");
+    const res = detectUpstreamErrorFromSseOrJsonText(sse);
+    expect(res.isError).toBe(true);
+    if (res.isError) {
+      expect(res.code).toBe("FAKE_200_RESPONSES_FAILED");
+    }
+  });
+
+  test("SSE：Responses API response.completed 事件（error 为 null）不视为错误", () => {
+    const completedEvent = {
+      type: "response.completed",
+      response: {
+        id: "resp_1",
+        object: "response",
+        status: "completed",
+        output: [{ type: "message", role: "assistant", content: [] }],
+        error: null,
+      },
+    };
+    const sse = ["event: response.completed", `data: ${JSON.stringify(completedEvent)}`, ""].join(
+      "\n"
+    );
+    const res = detectUpstreamErrorFromSseOrJsonText(sse);
+    expect(res.isError).toBe(false);
+  });
+
+  test("非流式 JSON：Responses API status=failed 视为错误", () => {
+    const body = JSON.stringify({
+      id: "resp_1",
+      object: "response",
+      status: "failed",
+      output: [],
+      error: { code: "rate_limit_exceeded", message: "Concurrency limit exceeded" },
+    });
+    const res = detectUpstreamErrorFromSseOrJsonText(body);
+    expect(res.isError).toBe(true);
+    if (res.isError) {
+      expect(res.code).toBe("FAKE_200_RESPONSES_FAILED");
+      expect(res.detail).toContain("rate_limit_exceeded");
+    }
+  });
+
+  test("非流式 JSON：Responses API status=incomplete 不视为上游错误", () => {
+    const body = JSON.stringify({
+      id: "resp_1",
+      object: "response",
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output: [],
+      error: null,
+    });
+    const res = detectUpstreamErrorFromSseOrJsonText(body);
+    expect(res.isError).toBe(false);
+  });
 });
 
 describe("inferUpstreamErrorStatusCodeFromText", () => {
@@ -266,6 +351,17 @@ describe("inferUpstreamErrorStatusCodeFromText", () => {
 
   test("可从错误文本中推断 429（rate limit）", () => {
     expect(inferUpstreamErrorStatusCodeFromText('{"error":"Rate limit exceeded"}')).toEqual({
+      statusCode: 429,
+      matcherId: "rate_limit",
+    });
+  });
+
+  test("可从下划线风格错误码推断 429（rate_limit_exceeded）", () => {
+    expect(
+      inferUpstreamErrorStatusCodeFromText(
+        '{"error":{"code":"rate_limit_exceeded","message":"Concurrency limit exceeded for account, please retry later"}}'
+      )
+    ).toEqual({
       statusCode: 429,
       matcherId: "rate_limit",
     });

@@ -18,6 +18,8 @@ import { parseSSEData } from "@/lib/utils/sse";
  *
  * 设计目标（偏保守）
  * - 仅基于结构化字段做启发式判断：`error` 与 `message`；
+ * - 对 OpenAI Responses API 的终态失败（SSE `response.failed` 事件 / 非流式 `status:"failed"`）
+ *   做结构化判定（错误嵌套在 `response.error`，通用顶层字段检测无法覆盖）；
  * - 对明显的 HTML 文档（doctype/html 标签）做强信号判定，覆盖部分网关/WAF/Cloudflare 返回的“假 200”；
  * - 不扫描模型生成的正文内容（例如 content/choices），避免把用户/模型自然语言里的 "error" 误判为上游错误；
  * - message 关键字检测仅对“小体积 JSON”启用，降低误判与性能开销。
@@ -74,12 +76,16 @@ const FAKE_200_CODES = {
   JSON_ERROR_NON_EMPTY: "FAKE_200_JSON_ERROR_NON_EMPTY",
   JSON_ERROR_MESSAGE_NON_EMPTY: "FAKE_200_JSON_ERROR_MESSAGE_NON_EMPTY",
   JSON_MESSAGE_KEYWORD_MATCH: "FAKE_200_JSON_MESSAGE_KEYWORD_MATCH",
+  RESPONSES_FAILED: "FAKE_200_RESPONSES_FAILED",
 } as const;
 
 // SSE 快速过滤：仅当文本里“看起来存在 JSON key”时才进入 parseSSEData（避免无谓解析）。
 // 注意：这里必须是 `"key"\s*:` 形式，避免误命中 JSON 字符串内容里的 `\"key\"`。
 const MAY_HAVE_JSON_ERROR_KEY = /"error"\s*:/;
 const MAY_HAVE_JSON_MESSAGE_KEY = /"message"\s*:/;
+// OpenAI Responses API（/v1/responses）终态失败事件：错误嵌套在 response.error，
+// 即使 error 字段缺失，事件类型本身也足以判定失败。
+const MAY_HAVE_RESPONSES_FAILED_TYPE = /"type"\s*:\s*"response\.failed"/;
 
 const HTML_DOC_SNIFF_MAX_CHARS = 1024;
 const HTML_DOCTYPE_RE = /^<!doctype\s+html[\s>]/i;
@@ -95,7 +101,7 @@ const ERROR_STATUS_MATCHERS: Array<{ statusCode: number; matcherId: string; re: 
   {
     statusCode: 429,
     matcherId: "rate_limit",
-    re: /(?:\bHTTP\/\d(?:\.\d)?\s+429(?![\p{L}\p{N}_]|\.\d)|(?<![\p{L}\p{N}_.])429(?![\p{L}\p{N}_]|\.\d)\s+too\s+many\s+requests\b|\btoo\s+many\s+requests\b|\brate\s*limit(?:ed|ing)?\b|\bthrottl(?:e|ed|ing)\b|\bretry-after\b|\bRESOURCE_EXHAUSTED\b|\bRequestLimitExceeded\b|\bThrottling(?:Exception)?\b|\bError\s*1015(?![\p{L}\p{N}_]|\.\d)|超出频率|请求过于频繁|限流|稍后重试)/iu,
+    re: /(?:\bHTTP\/\d(?:\.\d)?\s+429(?![\p{L}\p{N}_]|\.\d)|(?<![\p{L}\p{N}_.])429(?![\p{L}\p{N}_]|\.\d)\s+too\s+many\s+requests\b|\btoo\s+many\s+requests\b|\brate[\s_-]*limit(?:[\s_-]*exceeded|ed|ing)?\b|\bthrottl(?:e|ed|ing)\b|\bretry-after\b|\bRESOURCE_EXHAUSTED\b|\bRequestLimitExceeded\b|\bThrottling(?:Exception)?\b|\bError\s*1015(?![\p{L}\p{N}_]|\.\d)|超出频率|请求过于频繁|限流|稍后重试)/iu,
   },
   {
     statusCode: 402,
@@ -275,6 +281,51 @@ function truncateForDetail(text: string, maxLen: number = 200): string {
   return `${trimmed.slice(0, maxLen)}…`;
 }
 
+/**
+ * OpenAI Responses API（/v1/responses，含 Codex）终态失败的结构化检测：
+ * - SSE：`{"type":"response.failed","response":{...,"status":"failed","error":{...}}}`
+ *   错误嵌套在 `response.error` 下，通用的“顶层 error 字段”检测无法覆盖；
+ * - 非流式：响应对象本身 `object === "response"` 且 `status === "failed"`。
+ *
+ * 返回 null 表示“不是 Responses 失败结构”，由调用方继续走通用检测。
+ * 注意：`status === "incomplete"`（如达到 max_output_tokens）不视为上游失败。
+ */
+function detectResponsesApiFailure(
+  obj: Record<string, unknown>
+): Extract<UpstreamErrorDetectionResult, { isError: true }> | null {
+  let response: Record<string, unknown> | null;
+  if (obj.type === "response.failed") {
+    // 事件类型本身已是强失败信号：即使 response/error 缺失也判定为失败。
+    response = isPlainRecord(obj.response) ? obj.response : null;
+  } else if (obj.object === "response" && obj.status === "failed") {
+    response = obj;
+  } else {
+    return null;
+  }
+
+  const errorValue = response?.error;
+  if (isPlainRecord(errorValue)) {
+    const code = typeof errorValue.code === "string" ? errorValue.code.trim() : "";
+    const message = typeof errorValue.message === "string" ? errorValue.message.trim() : "";
+    const detail = [code, message].filter(Boolean).join(": ");
+    if (detail) {
+      return {
+        isError: true,
+        code: FAKE_200_CODES.RESPONSES_FAILED,
+        detail: truncateForDetail(detail),
+      };
+    }
+  } else if (typeof errorValue === "string" && errorValue.trim()) {
+    return {
+      isError: true,
+      code: FAKE_200_CODES.RESPONSES_FAILED,
+      detail: truncateForDetail(errorValue),
+    };
+  }
+
+  return { isError: true, code: FAKE_200_CODES.RESPONSES_FAILED };
+}
+
 function detectFromJsonObject(
   obj: Record<string, unknown>,
   rawJsonChars: number,
@@ -375,6 +426,9 @@ export function detectUpstreamErrorFromSseOrJsonText(
     try {
       const parsed = JSON.parse(trimmed) as unknown;
       if (isPlainRecord(parsed)) {
+        // Responses API 终态失败（status=failed）优先：detail 可携带结构化的 code+message
+        const responsesFailure = detectResponsesApiFailure(parsed);
+        if (responsesFailure) return responsesFailure;
         return detectFromJsonObject(parsed, trimmed.length, merged);
       }
     } catch {
@@ -387,9 +441,13 @@ export function detectUpstreamErrorFromSseOrJsonText(
     return { isError: false };
   }
 
-  // 情况 2：SSE 文本。快速过滤：既无 "error"/"message" key 时跳过解析
+  // 情况 2：SSE 文本。快速过滤：既无 "error"/"message" key、也无 response.failed 事件时跳过解析
   // 注意：这里要求 key 命中 `"key"\s*:`，尽量避免误命中 JSON 字符串内容里的 `\"error\"`。
-  if (!MAY_HAVE_JSON_ERROR_KEY.test(text) && !MAY_HAVE_JSON_MESSAGE_KEY.test(text)) {
+  if (
+    !MAY_HAVE_JSON_ERROR_KEY.test(text) &&
+    !MAY_HAVE_JSON_MESSAGE_KEY.test(text) &&
+    !MAY_HAVE_RESPONSES_FAILED_TYPE.test(text)
+  ) {
     return { isError: false };
   }
 
@@ -397,6 +455,10 @@ export function detectUpstreamErrorFromSseOrJsonText(
   const events = parseSSEData(text);
   for (const evt of events) {
     if (!isPlainRecord(evt.data)) continue;
+
+    // Responses API 终态失败事件（错误嵌套在 response.error，通用检测无法覆盖）
+    const responsesFailure = detectResponsesApiFailure(evt.data);
+    if (responsesFailure) return responsesFailure;
     // 性能优化：只有在 message 是字符串、且“看起来足够小”时才需要精确计算 JSON 字符数。
     // 对大多数 SSE 事件（message 为对象、或没有 message），无需 JSON.stringify。
     let chars = 0;

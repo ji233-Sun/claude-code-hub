@@ -1,0 +1,28 @@
+{
+  "entryButton": "批量测试",
+  "actionButton": "测试",
+  "dialog": {
+    "title": "批量测试供应商",
+    "runningDesc": "正在使用默认测试配置测试 {count} 个供应商...",
+    "doneDesc": "已完成 {count} 个供应商的测试",
+    "progress": "{completed}/{total}"
+  },
+  "status": {
+    "pending": "等待中",
+    "running": "测试中",
+    "green": "成功",
+    "yellow": "警告",
+    "red": "失败",
+    "skipped": "已跳过"
+  },
+  "buttons": {
+    "cancel": "取消测试",
+    "retest": "重新测试",
+    "close": "关闭"
+  },
+  "errors": {
+    "keyFetchFailed": "获取密钥失败",
+    "testFailed": "测试失败",
+    "noResult": "未返回测试结果"
+  }
+}

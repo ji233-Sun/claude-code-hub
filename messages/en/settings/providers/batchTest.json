@@ -1,0 +1,28 @@
+{
+  "entryButton": "Batch Test",
+  "actionButton": "Test",
+  "dialog": {
+    "title": "Batch Test Providers",
+    "runningDesc": "Testing {count} providers with the default test settings...",
+    "doneDesc": "Finished testing {count} providers",
+    "progress": "{completed}/{total}"
+  },
+  "status": {
+    "pending": "Pending",
+    "running": "Testing",
+    "green": "Passed",
+    "yellow": "Warning",
+    "red": "Failed",
+    "skipped": "Skipped"
+  },
+  "buttons": {
+    "cancel": "Cancel Test",
+    "retest": "Retest",
+    "close": "Close"
+  },
+  "errors": {
+    "keyFetchFailed": "Failed to fetch the API key",
+    "testFailed": "Test failed",
+    "noResult": "No test result returned"
+  }
+}
