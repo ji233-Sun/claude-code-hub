@@ -1,0 +1,88 @@
+name: Fork Docker Build
+
+# Fork 专用的镜像构建流程:
+# - push 到 main 时自动构建并推送到 ghcr.io/<fork所有者>/claude-code-hub
+# - 也可在任意分支上手动触发 (workflow_dispatch)
+# - 不做版本号自动递增、不创建 Release、不回写提交,保持 fork 历史干净
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # 跳过机器人提交和 [skip ci] 提交(例如从上游同步过来的 changelog 提交)
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pusher.name != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip ci]'))
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Prepare image name and tags
+        id: meta
+        run: |
+          GHCR_IMAGE=$(echo "ghcr.io/${{ github.repository_owner }}/claude-code-hub" | tr '[:upper:]' '[:lower:]')
+
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          SAFE_BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+
+          # main 分支推 latest,其余分支推分支名 tag;同时附带 commit hash tag 便于回滚
+          if [ "$BRANCH_NAME" = "main" ]; then
+            BASE_TAG="latest"
+          else
+            BASE_TAG="$SAFE_BRANCH_NAME"
+          fi
+          VERSIONED_TAG="${SAFE_BRANCH_NAME}-${SHORT_SHA}"
+
+          echo "ghcr_image=$GHCR_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "base_tag=$BASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "versioned_tag=$VERSIONED_TAG" >> "$GITHUB_OUTPUT"
+
+          echo "Image: $GHCR_IMAGE"
+          echo "Tags: $BASE_TAG, $VERSIONED_TAG"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./deploy/Dockerfile
+          # 服务器为 amd64;如需 arm64 改为 linux/amd64,linux/arm64 并增加 docker/setup-qemu-action 步骤
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.versioned_tag }}
+          tags: |
+            ${{ steps.meta.outputs.ghcr_image }}:${{ steps.meta.outputs.base_tag }}
+            ${{ steps.meta.outputs.ghcr_image }}:${{ steps.meta.outputs.versioned_tag }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.meta.outputs.versioned_tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build summary
+        run: |
+          echo "Docker image pushed:"
+          echo "  - ${{ steps.meta.outputs.ghcr_image }}:${{ steps.meta.outputs.base_tag }}"
+          echo "  - ${{ steps.meta.outputs.ghcr_image }}:${{ steps.meta.outputs.versioned_tag }}"
